@@ -1,0 +1,51 @@
+#Disable scp and logs all sftp connections
+
+#Disable Scp
+mv /usr/local/bin/scp{,out}
+
+#Create fake scp message
+cat > /usr/local/bin/scp <<EOF
+#!/bin/bash
+echo "This service allows ssh/sftp connections only"
+EOF
+
+#Create a wrapper script
+cat > /usr/local/bin/sftp-wrapper<<EOF
+#!/bin/sh
+#
+# sftpd wrapper script for executing pre/post session actions
+#
+
+# pre session actions and logging here
+SOURCE_IP=\${SSH_CLIENT%% *}
+MSG_SESSION_START="user \$LOGNAME session start from \$SOURCE_IP"
+logger -p local5.notice -t sftpd-wrapper -i "\$MSG_SESSION_START"
+
+# start actual SFTP session
+/usr/libexec/openssh/sftp-server -f LOCAL5 -l VERBOSE
+
+# add post session actions here
+MSG_SESSION_STOP="user \$LOGNAME session ended from \$SOURCE_IP"
+logger -p local5.notice -t sftpd-wrapper -i "\$MSG_SESSION_STOP"
+EOF
+
+#Add Subsystem
+vi /etc/ssh/sshd_config
+
+#Comment all subsystem and add the below line
+Subsystem	sftp	/usr/local/bin/sftp-wrapper
+
+###Enable logging
+vi /etc/rsyslog.conf
+
+#log all sftp transactions with output file sync
+local5.*                                                -/var/log/sftp.log
+
+
+#create sftp.log file
+touch /var/log/sftp.log
+
+
+#Restart services
+service sshd restart
+service rsyslog restart
